@@ -1,189 +1,182 @@
 #!/usr/bin/env python3
 """
-Simple IMU Data Reader
-Reads sensor data from ESP32 via serial port and displays it.
+BLE IMU Data Logger
+Receives sensor data from ESP32 via Bluetooth and saves to CSV
 """
 
-import serial as pyserial  # Rename to avoid conflicts
-import time
-import serial.tools.list_ports
-import traceback
+import asyncio
+import logging
 import csv
 import os
+import time
 from datetime import datetime
+from bleak import BleakScanner, BleakClient
 
 # ============================================
-# Configuration
+# Configuration (Edit these)
 # ============================================
-#SERIAL_PORT = '/dev/cu.usbserial-110'  # Update this to your ESP32 port
-SERIAL_PORT = '/dev/cu.SLAB_USBtoUART'  # Update this to your ESP32 porta
-BAUD_RATE = 115200
-LSB_ACC =  16384.0
-LSB_GYRO = 131.0
+DEVICE_NAME = "ESP32-NimBLE-Test"
+SERVICE_UUID = "12345678-1234-1234-1234-1234567890ab"
+CHAR_UUID = "abcdefab-1234-5678-1234-abcdefabcdef"
 
-# CSV logging settings
-ENABLE_LOGGING = True  # Set to False to disable logging
-LOG_DIR = './sensor_data/Recorded'  # Directory to save CSV files
-#ACTIVITY_NAME = 'standing'  # Change this to the activity you're recording
-#ACTIVITY_NAME = 'walking'  # Change this to the activity you're recording
-#ACTIVITY_NAME = 'laying'  # Change this to the activity you're recording
-ACTIVITY_NAME = 'test'  # Change this to the activity you're recording
+LOG_DIR = '../data/sensor_data/BLE_Recorded'
+ACTIVITY_NAME = 'walking'  # Change this before recording
 
-# ============================================
-# CSV Logger
-# ============================================
-def create_csv_logger(activity_name):
-    """
-    Create a CSV file with timestamp in filename.
-    
-    Returns:
-        csv_writer: CSV writer object
-        csv_file: File handle (to close later)
-        filename: Path to created file
-    """
-    # Create directory if it doesn't exist
-    os.makedirs(LOG_DIR, exist_ok=True)
-    
-    # Generate filename with timestamp
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"{LOG_DIR}/{activity_name}_{timestamp}.csv"
-    
-    # Open file and create CSV writer
-    csv_file = open(filename, 'w', newline='')
-    csv_writer = csv.writer(csv_file, delimiter=';')  # Use semicolon like your other files
-    
-    # Write header
-    csv_writer.writerow(['acc_x', 'acc_y', 'acc_z', 'gyro_x', 'gyro_y', 'gyro_z'])
-    
-    print(f"📝 Logging to: {filename}")
-    
-    return csv_writer, csv_file, filename
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-# ============================================
-# Main Loop
-# ============================================
-def main():
-    print("="*60)
-    print("IMU DATA READER & LOGGER")
-    print("="*60)
-    print(f"Serial Port: {SERIAL_PORT} @ {BAUD_RATE} baud")
-    if ENABLE_LOGGING:
-        print(f"Activity: {ACTIVITY_NAME}")
-        print(f"Log Directory: {LOG_DIR}")
-    else:
-        print("Logging: DISABLED")
-    print("="*60)
-    print("\nConnecting to ESP32...")
+class CSVLogger:
+    def __init__(self, activity, filedir):
+
+        os.makedirs(filedir, exist_ok=True)
+
+        timestamp = datetime.strftime("%d%m%Y_%H%M%S")
+
+        self.file_name = f'{filedir}/{activity}_{timestamp}.csv'
+        self.csv_file = open(self.csv_file, 'w', newline='')
+        self.csv_writer = csv.writer(self.csv_file, delimiter=';')
+        self.csv_write.writerow(['timestamp', 'acc_x', 'acc_y', 'acc_z', 'gyro_x', 'gyro_y', 'gyro_z'])
+
+        self.sample_count = 0
+
+        logger.info("Csv file created")
+
+    def write_row(self, data_dir):
+        self.timestamp = datetime.strftime('%H%M%S')
+        self.csv_writer([
+            self.timestamp,
+            data_dir['acc_x'],
+            data_dir['acc_y'],
+            data_dir['acc_z'],
+            data_dir['gyro_x'],
+            data_dir['gyro_y'],
+            data_dir['gyro_z']
+        ])
+
+        self.sample_count += 1
+        if self.sample_count % 100 == 0:
+            self.csv_file.flush()
+
+    def close(self):
+        self.csv_file.flush()
+        self.csv_file.close()
+        logger.info('Closing csv file')
+
+class BLEDataLogger:
+    def __init__(self, device_name, service_uuid, char_uuid, csv_logger):
+        self.device_name = device_name
+        self.service_uuid = service_uuid
+        self.char_uuid = char_uuid
+        self.csv_logger = csv_logger
+        self.client = None
+        self.sample_count = 0
     
-    # Initialize CSV logger
-    csv_writer = None
-    csv_file = None
-    log_filename = None
+    async def scan_and_connect(self):
+        logger.info("Scanning")
+        devices = await BleakScanner.discover()
+
+        esp_device = None
+        for d in devices:
+            if d.name == self.device_name:
+                esp_device = d
+
+        if not esp_device:
+            logger("Could not find the device")
+            for d in devices:
+                logger.info(f"Found device name here {d.name}")
+            return False
+        
+        logger.info(f"Found device at : {esp_device.address}")
+
+        self.client = BleakClient(esp_device.address)
+        await self.client.connect()
+        logger.info("Connected")
+
+        return True
     
+    def notification_handler(self, sender, data):
+
+        try:
+            encoded = data.decoded('utf-8')
+
+            parts = encoded.split(',')
+
+            if not (parts == 6):
+                logger.warning("Invalid formating")
+                return None
+            
+            acc_x, acc_y, acc_z, gyro_x, gyro_y, gyro_z = [float(x) for x in parts]
+
+            data_dir = {
+                'acc_x': acc_x,
+                'acc_y': acc_y,
+                'acc_z': acc_z,
+                'gyro_x': gyro_x,
+                'gyro_y': gyro_y,
+                'gyro_z': gyro_z
+            }
+
+            self.csv_logger.writer_row(data_dir)
+            self.sample_count += 1
+
+            if self.sample_count % 10 == 0:
+                logger.info(f"Samples: {self.sample_count:4d} | acc: [{acc_x:+6.2f}, {acc_y:+6.2f}, {acc_z:+6.2f}] | gyro: [{gyro_x:+6.3f}, {gyro_y:+6.3f}, {gyro_z:+6.3f}]")
+        
+
+        except ValueError as e:
+            logger.warning(f"Parsog failed: {e}")
+        except Exception as e:
+            logger.error(f"Something went wrong: {e}")
+
+    async def start_logging(self):
+        if not self.client or self.client.is_connected():
+            raise ConnectionError(f"Device not connected")
+        
+        logger.info("Sstarting logging")
+
+        await self.client.start_notify(self.char_uuid, self.notification_handler)
+
+        try:
+            while True:
+                await asyncio.sleep(1)
+        except KeyboardInterrupt:
+            logger.info("Quiting")
+        
+        await self.client.stop_notify(self.char_uuid)
+
+    async def disconnect(self):
+        if self.client.is_connected() and self.client:
+            await self.client.disconnect()
+            logger.info("Disconnected now!")
+
+
+async def main():
+
+    csv_logger = CSVLogger(ACTIVITY_NAME, LOG_DIR)
+
+    ble_logger = BLEDataLogger(DEVICE_NAME, SERVICE_UUID, CHAR_UUID, csv_logger)
+
     try:
-        ser = pyserial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1)
-        time.sleep(2)  # Wait for connection
-        print("✓ Connected!\n")
+        if not await ble_logger.scan_and_connect():
+            logger.error("Could not connect")
+        ble_logger.start_logging()
 
-        # Create CSV logger
-        if ENABLE_LOGGING:
-            csv_writer, csv_file, log_filename = create_csv_logger(ACTIVITY_NAME)
-
-        # Flush initial garbage data
-        ser.reset_input_buffer()
-        for _ in range(5):
-            ser.readline()
-        
-        print("Reading IMU data... (Press Ctrl+C to stop)\n")
-        print(f"{'Time':^8} | {'acc_x':^8} | {'acc_y':^8} | {'acc_z':^8} | {'gyro_x':^8} | {'gyro_y':^8} | {'gyro_z':^8}")
-        print("-" * 80)
-        
-        sample_count = 0
-        logged_count = 0
-        
-        while True:
-            try:
-                line = ser.readline().decode('utf-8').strip()
-                
-                if not line:
-                    continue
-                
-                # Skip non-CSV lines (like "Initializing MPU6050...")
-                if not (line[0].isdigit() or line[0] == '-'):
-                    print(f"ℹ️  Info: {line}")  # Show non-CSV messages
-                    continue
-                
-                # Parse CSV: acc_x,acc_y,acc_z,gyro_x,gyro_y,gyro_z
-                parts = line.split(',')
-                if len(parts) != 6:
-                    print(f"⚠️  Invalid data: {line}")
-                    continue
-                
-                # Convert to float
-                try:
-                    acc_x, acc_y, acc_z, gyro_x, gyro_y, gyro_z = [float(x) for x in parts]
-                except ValueError:
-                    print(f"⚠️  Parse error: {line}")
-                    continue
-
-                # Convert raw values to physical units
-                ax_g = acc_x / LSB_ACC
-                ay_g = acc_y / LSB_ACC
-                az_g = acc_z / LSB_ACC
-
-                gx_dps = gyro_x / LSB_GYRO
-                gy_dps = gyro_y / LSB_GYRO
-                gz_dps = gyro_z / LSB_GYRO
-
-                sample_count += 1
-                
-                # Log to CSV
-                if ENABLE_LOGGING and csv_writer:
-                    csv_writer.writerow([ax_g, ay_g, az_g, gx_dps, gy_dps, gz_dps])
-                    logged_count += 1
-                    
-                    # Flush to disk every 100 samples (1 second at 100Hz)
-                    if logged_count % 100 == 0:
-                        csv_file.flush()
-                
-                # Display data (every 10 samples to not flood terminal)
-                if sample_count % 10 == 0:
-                    timestamp = time.strftime("%H:%M:%S")
-                    log_indicator = "Writing" if ENABLE_LOGGING else "  "
-                    print(f"{timestamp} {log_indicator} | {ax_g:+8.3f} | {ay_g:+8.3f} | {az_g:+8.3f} | {gx_dps:+8.3f} | {gy_dps:+8.3f} | {gz_dps:+8.3f}")
-                
-            except KeyboardInterrupt:
-                print("\n\n Stopping...")
-                break
-            except Exception as e:
-                print(f"❌ Error reading data: {e}")
-                continue
-        
-        # Close serial connection
-        ser.close()
-        
-        # Close CSV file
-        if csv_file:
-            csv_file.close()
-            print(f"\n✓ Saved {logged_count} samples to: {log_filename}")
-        
-        print(f"✓ Disconnected (read {sample_count} samples)")
-        
-    except pyserial.SerialException as e:
-        print(f"\n❌ Error: Could not open serial port {SERIAL_PORT}")
-        print(f"   {e}")
-        print("\n💡 Available ports:")
-        for port in serial.tools.list_ports.comports():
-            print(f"   - {port.device}: {port.description}")
-        print("\nUpdate SERIAL_PORT in the script to match your ESP32 port.")
     except Exception as e:
-        print(f"\n❌ Unexpected error: {e}")
-        traceback.print_exc()
+        logger.error(f"Got an error while trying to connect: {e}")
+        return None
     finally:
-        # Ensure CSV file is closed even if error occurs
-        if csv_file:
-            csv_file.close()
-            print(f"\n✓ CSV file saved: {log_filename}")
+        ble_logger.disconnect()
+        csv_logger.close()
 
-if __name__ == "__main__":
-    main()
+
+if __name__ == '__main__':
+    asyncio.run(main())
+
+    
+
+    
+
+
+
+
+
