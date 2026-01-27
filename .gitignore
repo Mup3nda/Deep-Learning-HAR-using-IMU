@@ -4,3 +4,5 @@ sensor_data
 Fall-Detection-System-SisFall-Dataset-Raspberry-Pi
 *.db
 *.bin
+test.ipynb
+test.py
