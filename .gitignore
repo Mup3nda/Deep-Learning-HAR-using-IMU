@@ -4,6 +4,8 @@
 __pycache__/
 *.pyc
 
+dl_har
+
 .venv
 
 model/lstm_fall_model
