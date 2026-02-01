@@ -13,6 +13,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../src"))
 
 from data_processing import preprocess_for_prediction
 from predictor_tflite import TFLitePredictor
+from mqtt import raw_sensor_to_mqtt, prediction_to_mqtt
 
 logging.basicConfig(level=logging.INFO)
 
@@ -36,8 +37,9 @@ def progress_bar(confidence):
 # ============================================
 # Configuration (Edit these)
 # ============================================
-TFLITE_MODEL = './model/lstm_model_v001_lite.tflite'
-CSV_FILE = './data/sensor_data/Recorded/walking2_20260122_191001.csv'
+MODEL_VERSION = 'lstm_model_v001_lite'
+TFLITE_MODEL = f'./model/lstm_model_v001/lstm_model_v001_lite.tflite'
+CSV_FILE = './data/sensor_data/Recorded/walking_20260122_191001.csv'
 
 
 
@@ -59,21 +61,28 @@ def main():
         return 1
     
     try:
-        # Step 1: Preprocess data
+        # Preprocess data
         logger.info(f" Preprocessing data...")
-        windows = preprocess_for_prediction(CSV_FILE)
+        windows, sensor_data = preprocess_for_prediction(CSV_FILE)
         
-        # Step 2: Load TFLite model
+        # Load TFLite model
         logger.info(f" Loading TFLite model...")
         predictor = TFLitePredictor(TFLITE_MODEL)
         
-        # Step 3: Make prediction
+        # Make prediction
         logger.info(f" Making prediction...\n")
         result = predictor.predict(windows, verbose=False)
         
         activity = result['activity']
         emoji = ACTIVITY_EMOJI[activity]
         confidence = result['confidence']
+        num_windows = len(windows)
+        
+        # Send to MQTT
+        raw_sensor_to_mqtt(sensor_data)
+        #prediction_to_mqtt(sensor_data['timestamp'], CSV_FILE, activity, confidence, MODEL_VERSION, num_windows )
+        
+        
         
         print("-"*80)
         print(f"\nActivity: {activity} {emoji} \tModel Confidence: {progress_bar(confidence)} \n")

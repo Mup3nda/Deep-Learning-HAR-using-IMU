@@ -22,3 +22,6 @@ test/test_coding.py
 scripts/test_coding.py
 requirements.txt
 test
+
+#
+src/config.py
