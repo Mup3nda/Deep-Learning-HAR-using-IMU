@@ -2,8 +2,11 @@
     "python-envs.pythonProjects": [
         {
             "path": "",
-            "envManager": "ms-python.python:conda",
-            "packageManager": "ms-python.python:conda"
+            "envManager": "ms-python.python:system",
+            "packageManager": "ms-python.python:pip"
         }
-    ]
+    ],
+    "python.defaultInterpreterPath": "/Users/didiermupenda/miniforge3/envs/dl-projects/bin/python",
+    "python.interpreter.infoVisibility": "never"
 }
+

@@ -6,6 +6,7 @@ import logging
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.path.pardir, 'src'))
+
 from data_processing import  preprocess_for_prediction
 from model_loader import ModelLoader
 from predictor import ActivityPredictor

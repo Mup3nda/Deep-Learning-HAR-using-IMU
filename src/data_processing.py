@@ -86,7 +86,7 @@ def preprocess_for_prediction(csv_file, input_hz = 100, target_hz = 50) -> np.nd
 
     windows = create_window(df_clean)
 
-    return windows
+    return windows, df_clean
 
 
 def main():

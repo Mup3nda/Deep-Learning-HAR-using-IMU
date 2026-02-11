@@ -1,7 +1,29 @@
 
+
+# Python
+__pycache__/
+*.pyc
+
+dl_har
+
+.venv
+
+model/lstm_fall_model
+model/lstm_model_v002
+model/lstm_model_v001
+
+# Jupyter
+.ipynb_checkpoints/
+
 UCI HAR Dataset
 sensor_data
 Fall-Detection-System-SisFall-Dataset-Raspberry-Pi
 *.db
 *.bin
 test/test_coding.py
+scripts/test_coding.py
+requirements.txt
+test
+
+#
+src/config.py
